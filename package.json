@@ -1,0 +1,37 @@
+{
+  "name": "composio-oauth-guides",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx tests/fetch-parse.test.ts && tsx tests/claim.test.ts && tsx tests/budget.test.ts && tsx tests/pipeline.test.ts",
+    "embed": "tsx scripts/embed-guides.ts",
+    "generate": "tsx --env-file=.env.local scripts/generate.ts",
+    "verify:gmail": "tsx scripts/verify-quotes.ts gmail",
+    "verify:slack": "tsx scripts/verify-quotes.ts slack",
+    "fetch:pages": "tsx --env-file=.env.local scripts/fetch-pages.ts",
+    "spike:fetch": "tsx --env-file=.env.local scripts/spike-fetch.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.4.0",
+    "next": "16.4.3",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/turbopack": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.3",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.15",
+    "typescript": "^5"
+  }
+}
