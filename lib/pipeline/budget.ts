@@ -117,11 +117,12 @@ export class UsageTracker {
     if (limit) throw new BudgetExceededError(limit, this.summary());
   }
 
-  /** Whether another repair try is allowed. Past the soft limit only the first try is. */
+  /**
+   * Whether another repair try is allowed. Repairs are cheap (a few cents) and turn a failed guide into a usable one,
+   * so they are limited by the try count and the hard caps only, not by the soft limit.
+   */
   mayRepair(triesSoFar: number): boolean {
-    if (triesSoFar >= this.budget.maxRepairTries) return false;
-    if (this.exceeded()) return false;
-    return triesSoFar === 0 || !this.softLimitReached();
+    return triesSoFar < this.budget.maxRepairTries && !this.exceeded();
   }
 
   summary() {

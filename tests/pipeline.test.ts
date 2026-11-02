@@ -28,6 +28,7 @@ assert.equal(resolveQuery("linear.app/docs").userUrl, "https://linear.app");
 assert.equal(resolveQuery("hub spot").name, "Hub Spot");
 
 import { rules } from "../lib/pipeline/prompts/assemble";
+import { normalizeAssembled } from "../lib/pipeline/assemble";
 assert.match(rules("c9"), /Never mark a path required out of caution/);
 assert.match(rules("c9"), /claim c9/);
 
@@ -178,18 +179,58 @@ async function main() {
     assert.equal(result.usage.stages.repair.calls, 1);
   }
 
-  // Repair is limited to one try: a second bad reply returns an incomplete result with the errors.
+  // Repair is limited to maxRepairTries (default 2): three bad replies in a row return an incomplete result with the errors.
   {
     const bad = assembledOk();
     bad.verdict.claimIds = ["c99"];
-    const { client, result } = await run({ assemble: [JSON.stringify(bad)], repair: [JSON.stringify(bad)] });
+    const { client, result } = await run({ assemble: [JSON.stringify(bad)], repair: [JSON.stringify(bad), JSON.stringify(bad)] });
     assert.equal(result.status, "incomplete");
     if (result.status === "incomplete") {
       assert.match(result.reason, /did not pass validation/);
       assert.ok(result.errors.some((e) => e.includes("c99")));
       assert.ok(result.claims.length >= 5, "partial claims are returned");
     }
+    assert.equal(client.calls.filter((c) => c === "repair").length, 2);
+  }
+
+  // The second retry can rescue a guide the first retry did not.
+  {
+    const bad = assembledOk();
+    bad.verdict.claimIds = ["c99"];
+    const { client, result } = await run({ assemble: [JSON.stringify(bad)], repair: [JSON.stringify(bad), JSON.stringify(assembledOk())] });
+    assert.equal(result.status, "complete");
+    assert.equal(client.calls.filter((c) => c === "repair").length, 2);
+    assert.equal(result.usage.stages.repair.calls, 2);
+  }
+
+  // With maxRepairTries 1, only one retry is made.
+  {
+    const bad = assembledOk();
+    bad.verdict.claimIds = ["c99"];
+    const { client, result } = await run({ assemble: [JSON.stringify(bad)], repair: [JSON.stringify(bad)] }, { ...DEFAULT_BUDGET, maxRepairTries: 1 });
+    assert.equal(result.status, "incomplete");
     assert.equal(client.calls.filter((c) => c === "repair").length, 1);
+  }
+
+  // Enum drift is fixed in code: no repair call is spent.
+  {
+    const drift = assembledOk();
+    (drift.steps[1] as { stage: string }).stage = "listing";
+    (drift.steps[0] as { who: string }).who = "developer";
+    const { client, result } = await run({ assemble: [JSON.stringify(drift)] });
+    assert.equal(result.status, "complete");
+    assert.ok(!client.calls.includes("repair"));
+    if (result.status === "complete") {
+      assert.equal(result.guide.steps[1].stage, "approval");
+      assert.equal(result.guide.steps[0].who, "you");
+    }
+    assert.equal(normalizeAssembled({ steps: [{ stage: "zzz" }] }).notes.length, 0); // unclear values are left alone
+  }
+
+  // At most maxPages pages are read, even if discovery proposes more.
+  {
+    const { client } = await run({ assemble: [JSON.stringify(assembledOk())] }, { ...DEFAULT_BUDGET, maxPages: 2 });
+    assert.equal(client.calls.filter((c) => c.startsWith("extract:")).length, 2);
   }
 
   // Unparseable assemble output goes to repair too.

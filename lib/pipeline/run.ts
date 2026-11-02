@@ -133,7 +133,7 @@ export async function runPipeline(opts: {
       .sort((a, b) => TOPIC_PRIORITY.indexOf(a.topic) - TOPIC_PRIORITY.indexOf(b.topic))
       .filter((p) => (seen.has(canonicalUrl(p.url)) ? false : (seen.add(canonicalUrl(p.url)), true)));
     if (tracker.softLimitReached()) candidates = candidates.filter((p) => p.topic === "registration" || p.topic === "review" || p.topic === "flow");
-    candidates = candidates.slice(0, tracker.remainingFetches());
+    candidates = candidates.slice(0, Math.min(budget.maxPages, tracker.remainingFetches()));
     const dropped = found.pages.length - candidates.length;
     stage("discover", "done", `${candidates.length} official page(s) to read${dropped > 0 ? `, ${dropped} skipped` : ""}`);
     if (candidates.length === 0) return incomplete("No official documentation pages were found", found.notes ? [found.notes] : []);
@@ -231,6 +231,10 @@ export async function runPipeline(opts: {
     stage("validate", "start");
     let assembled: Assembled | undefined = first.ok ? first.value : undefined;
     let errors: string[] = first.ok ? [] : first.errors;
+    // When a reply cannot be parsed, keep its text so repair can fix the model's own output and the failure is diagnosable.
+    let rawReply: string | undefined = first.ok ? undefined : first.rawText;
+    const excerpt = (t: string) => `Reply began: ${JSON.stringify(t.slice(0, 240))}`;
+    if (!first.ok) errors = [...errors, excerpt(first.rawText)];
     let guide: Guide | undefined;
     if (assembled) {
       const v = validateGuide(mergeGuide(assembled, { ...ctxBase, run: toRun(tracker, model) }));
@@ -242,7 +246,7 @@ export async function runPipeline(opts: {
     let tries = 0;
     while (!guide && tracker.mayRepair(tries)) {
       stage("repair", "start", errors.slice(0, 3).join("; "));
-      const fixed = await repair({ client, tracker, model, budget, previous: assembled ?? {}, errors, claimIds: claims.map((c) => c.id), composioClaimId });
+      const fixed = await repair({ client, tracker, model, budget, previous: assembled ?? rawReply ?? {}, errors, claimIds: claims.map((c) => c.id), composioClaimId });
       tries++;
       if (fixed.ok) {
         assembled = fixed.value;
@@ -250,7 +254,8 @@ export async function runPipeline(opts: {
         guide = v.guide;
         errors = v.errors;
       } else {
-        errors = fixed.errors;
+        rawReply = fixed.rawText;
+        errors = [...fixed.errors, excerpt(fixed.rawText)];
       }
       stage("repair", "done", errors.length === 0 ? "Valid" : `${errors.length} problem(s) remain`);
     }

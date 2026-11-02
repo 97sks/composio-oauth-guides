@@ -16,7 +16,7 @@ Decided: **`claude-sonnet-5-5` for every model call.** No Haiku, no separate ver
 | 5 Claim | **Code only**: quote check, source kind by domain, status by rule |
 | 6 Assemble | Sonnet |
 | 7 Validate | Code |
-| 8 Repair (one try) | Sonnet |
+| 8 Repair (up to two tries) | Sonnet |
 
 ## Principles
 
@@ -46,7 +46,7 @@ Decided: **`claude-sonnet-5-5` for every model call.** No Haiku, no separate ver
 | 5 | **Claim** | Candidate facts | Numbered `claims[]` and `sources[]` with status | Done before any prose. Status by rule. |
 | 6 | **Assemble** | Claims, sources, Composio template | Full `Guide` object | Prose is written from claims; steps, blockers and requirements reference claim IDs that already exist. |
 | 7 | **Validate** | Guide | Pass, or list of issues | `GuideSchema.safeParse`. |
-| 8 | **Repair** | Issues | Corrected guide | Feed validator messages back; one try, then return the draft with the failures listed. Not needed for GitHub, essential for live use. |
+| 8 | **Repair** | Issues | Corrected guide | Feed validator messages back; up to two tries, then return the draft with the failures listed. Not needed for GitHub, essential for live use. |
 
 ## Questions per field
 
@@ -112,17 +112,17 @@ A second, independent model pass over each `sourced` claim was considered and **
 
 ## Budget cap per guide
 
-Every guide generation runs under a budget ([lib/pipeline/config.ts](../lib/pipeline/config.ts), enforced by [lib/pipeline/budget.ts](../lib/pipeline/budget.ts)). The defaults below are a first guess, set just above the estimated cost of a typical guide (roughly $0.35-0.45, an estimate and not a measurement). Headroom is thin: a guide that needs many pages or a long assemble may hit the cap, and the soft limit (80%, $0.40) will stop extra work early. Tune them once real runs are logged.
+Every guide generation runs under a budget ([lib/pipeline/config.ts](../lib/pipeline/config.ts), enforced by [lib/pipeline/budget.ts](../lib/pipeline/budget.ts)). The defaults below are tuned to three real HubSpot runs that cost $0.35, $0.36 and $0.51 (priced from published rates), with room for up to two repairs. That is very little data. Parallel page reads can still overshoot the cap slightly, and the soft limit (80%, $0.48) stops low-priority pages early. Tune them once real runs are logged.
 
 | Limit | Default | What happens |
 |---|---|---|
-| Total cost | $0.50 | **Hard cap.** The run stops before the next model call and returns its partial result. |
-| Soft limit | 80% of the cost cap ($0.40) | Optional work stops: no extra pages. |
+| Total cost | $0.60 | **Hard cap.** The run stops before the next model call and returns its partial result. |
+| Soft limit | 80% of the cost cap ($0.48) | Optional work stops: low-priority topics are not fetched. Repairs still run. |
 | Web searches | 6 | Passed to `web_search` as `max_uses`, reduced by what earlier calls used. |
 | Web fetches | 12 | Same, for `web_fetch`, summed across calls. |
 | Content per page | 100,000 tokens | `max_content_tokens`; also how truncation is detected. |
 | Output per call | 16,000 tokens | `max_tokens`. |
-| Repair tries | 1 | One full model call. If it still fails validation, the draft is returned with the remaining errors listed. |
+| Repair tries | 2 | Each is a full model call (a few cents). Limited by the try count and the hard caps, not the soft limit. If it still fails validation, the draft is returned with the remaining errors listed. |
 | Wall clock | 180 seconds | Whole run. |
 
 How it works:

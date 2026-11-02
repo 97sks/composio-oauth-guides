@@ -2,7 +2,7 @@
 
 Take-home for the APM Integrations assignment ([ASSIGNMENT.md](ASSIGNMENT.md)). A developer looks up an app and gets a shareable guide covering how hard it is to get an OAuth app ready, how long it takes (including approval waits), what could block them, and which steps an agent can do for them versus which they must do themselves. For an app not in the library, an agent researches the provider and generates a guide on demand.
 
-> **Status: work in progress.** Built: the guide schema, **three library guides** ([GitHub](lib/guides/github.ts), [Gmail (Google)](lib/guides/google.ts), [Slack](lib/guides/slack.ts)), the **live generation pipeline** (`lib/pipeline/`) behind `POST /api/generate`, and the prototype UI that calls it ([public/prototype.html](public/prototype.html)). **Not yet verified: a real end-to-end run.** The pipeline passes offline tests with a scripted fake model and the server endpoints were exercised, but the one real run was blocked because the API key was no longer valid, so live cost and quality are untested. **Notion and LinkedIn are deliberately not in the library**: they are meant to be generated live from the prototype and checked. Sections marked *(planned)* describe the target. This README is updated as each piece lands, so it never claims more than exists.
+> **Status: work in progress.** Built: the guide schema, **three library guides** ([GitHub](lib/guides/github.ts), [Gmail (Google)](lib/guides/google.ts), [Slack](lib/guides/slack.ts)), the **live generation pipeline** (`lib/pipeline/`) behind `POST /api/generate`, and the prototype UI that calls it ([public/prototype.html](public/prototype.html)). **Live runs so far (HubSpot, three of them): one completed, two did not, and the fixes made afterwards have only been tested offline.** See "What the live runs showed" below. **Notion and LinkedIn are deliberately not in the library**: they are meant to be generated live from the prototype and checked. Sections marked *(planned)* describe the target. This README is updated as each piece lands, so it never claims more than exists.
 
 ## Setup
 
@@ -21,8 +21,8 @@ Environment variables (see [.env.example](.env.example); `.env.local` is git-ign
 | `ANTHROPIC_API_KEY` | Live guide generation. Without it, library guides still open; other apps get a clear "key not set" message and spend nothing. | none |
 | `COMPOSIO_API_KEY` | Each live guide checks whether Composio already ships a managed OAuth app (`GET /api/v3.1/toolkits/{slug}`), sent only to backend.composio.dev. Auth-config and Connect Link tests are not built. Without it the check is labelled "not tested". | none |
 | `PIPELINE_MODEL` | Model for every pipeline call | `claude-sonnet-5-5` |
-| `GUIDE_MAX_COST_USD` | Hard cost cap per guide | `0.50` |
-| `GUIDE_MAX_REPAIR_TRIES` | Repair tries after a failed validation | `1` |
+| `GUIDE_MAX_COST_USD` | Hard cost cap per guide | `0.60` |
+| `GUIDE_MAX_REPAIR_TRIES` | Repair tries after a failed validation | `2` |
 | `GENERATE_ENABLED` | Turn the public endpoint off | `true` |
 | `GENERATE_RATE_LIMIT_PER_HOUR` | Per-IP limit on non-library generations (in-memory, single instance) | `3` |
 
@@ -71,8 +71,8 @@ docs/                     AGENT_DESIGN.md, COMPOSIO_SYSTEM_DESIGN.md, LIBRARY_LO
   - **Evidence:** claims, sources and tests.
 - **Citations are mandatory.** Every statement points at one or more claims, every claim at one or more sources, and every source has an https link. A source that nothing cites is rejected. A claim marked `sourced` needs an official source; `anecdotal` means only vendor or community reports; `uncertain` means sources conflict or are silent; `verified` is reserved for things we tried ourselves and needs a passed test. A wait figure marked `unpublished` cannot contain a number.
 - **Library.** GitHub, Gmail (Google) and Slack are hand-researched and quote-checked; the lock list is in [docs/LIBRARY_LOCK.md](docs/LIBRARY_LOCK.md). Every other app, including Notion and LinkedIn, is generated live on request.
-- **Live generation (built, not yet verified with a real run).** Submit an app name or URL (or press **Generate guide** on a card). `POST /api/generate` runs a fixed pipeline: it checks the library first, then finds the provider's official docs with web search, reads them with web fetch (one call per topic, in parallel), turns each fact and its verbatim quote into a claim whose status code decides, has the model write the guide from those claims, validates it against the schema, and makes at most one repair try. It streams stage progress and running cost to the page. Every model call uses `claude-sonnet-5-5`. Design and stage details: [docs/AGENT_DESIGN.md](docs/AGENT_DESIGN.md).
-- **Budget cap per guide.** Each live guide runs under a limit set in [lib/pipeline/config.ts](lib/pipeline/config.ts): **$0.50** total (hard stop; extra work stops at 80%, $0.40), at most 6 searches and 12 page fetches, **one repair try**, and 180 seconds. Hitting a cap returns the partial guide marked incomplete instead of failing. The cost estimate behind these numbers (roughly $0.35-0.45 per guide) is an estimate, not a measurement, so headroom is thin and the limits will need tuning. Prices in the config are Anthropic's published rates as of 2026-11-03. Details: [AGENT_DESIGN.md](docs/AGENT_DESIGN.md#budget-cap-per-guide).
+- **Live generation (built; three real runs made, none yet passing end to end after the latest fixes).** Submit an app name or URL (or press **Generate guide** on a card). `POST /api/generate` runs a fixed pipeline: it checks the library first, then finds the provider's official docs with web search, reads them with web fetch (one call per topic, in parallel), turns each fact and its verbatim quote into a claim whose status code decides, has the model write the guide from those claims, validates it against the schema, and makes up to two repair tries. It streams stage progress and running cost to the page. Every model call uses `claude-sonnet-5-5`. Design and stage details: [docs/AGENT_DESIGN.md](docs/AGENT_DESIGN.md).
+- **Budget cap per guide.** Each live guide runs under a limit set in [lib/pipeline/config.ts](lib/pipeline/config.ts): **$0.60** total (hard stop; low-priority pages stop at 80%, $0.48), at most 6 searches, 6 pages read, **two repair tries** (not limited by the soft limit), and 180 seconds. Hitting a cap returns the partial guide marked incomplete instead of failing. The cost estimate behind these numbers (roughly $0.35-0.45 per guide) is an estimate, not a measurement, so headroom is thin and the limits will need tuning. Prices in the config are Anthropic's published rates as of 2026-11-03. Details: [AGENT_DESIGN.md](docs/AGENT_DESIGN.md#budget-cap-per-guide).
 - **Quote-checked evidence.** Beside each library guide sits a list of verbatim quotes, one or more per claim. `npx tsx scripts/verify-quotes.ts <gmail|slack> <pagesDir...>` re-checks every quote against the raw page text saved by `scripts/fetch-pages.ts`. A matching quote proves the words are on the cited page, not that the claim reads them correctly.
 - **Cost and tokens on every generate.** Whatever starts a generation (the box, a card's **Generate guide** button, or a library card) opens a drawer with a cost and token panel followed by the guide. A live run shows its metered usage per stage, in dollars and tokens, with the cap. A saved library guide shows $0.000 for viewing plus what researching it cost. If live generation cannot run (no key, rate limit, page opened as a file), the reason is shown with $0.000 and 0 tokens, and the placeholder is labelled as such: no number is ever invented. The schema's optional `run` field carries the figures.
 - **Prototype.** [public/prototype.html](public/prototype.html) is a static page modelled on the Composio dashboard's Toolkits table, with a guide drawer, served by Next.js (`/` redirects to it). The three library guides and the pipeline settings are embedded by [scripts/embed-guides.ts](scripts/embed-guides.ts) (`npm run embed`); everything else comes from the API.
@@ -95,7 +95,7 @@ After editing a library guide, run `npm run embed`. Importing a guide parses it 
 | Library guides: GitHub, Gmail (Google), Slack | Done, quote-checked (Gmail 45, Slack 31) |
 | Pipeline stages, orchestrator, budget cap, `/api/generate` | Built; tested offline with a scripted fake model (happy path, library shortcut, repair, repair limit, budget stop) |
 | Prototype UI wired to the endpoint (streaming log, live usage, incomplete and failure states) | Built; tested with real event streams against a stubbed page, not in a browser |
-| **A real end-to-end run** | **Not done**: the API key became invalid before the first live run. Cost, speed and quality of live guides are unmeasured |
+| **Real end-to-end runs** | Three HubSpot runs: one complete ($0.349, 48 s), two incomplete. Fixes since (enum normalization, page cap, two repairs, a stricter approval rule) are tested offline only. No run since has been made. |
 | Verification pass over cited pages | Dropped for now (the quote check proves the words are on the page, not that the claim reads them correctly) |
 | Composio managed-auth lookup | Built; tested against a fake server only. The response shape comes from Composio's docs and is unchecked against a live call |
 | Saving a generated guide at a shareable URL; Composio auth-config creation and Connect Link test | Not built |
@@ -135,13 +135,33 @@ Search and fetch use **only Anthropic's server tools** through the Messages API 
 - **Marked `uncertain` (3 claims):** the effort estimate, the Composio steps, and what `chat:write` grants (the scope reference page could not be fetched).
 - **Left open:** what each scope grants, whether the current rate-limits page repeats the changelog, and actual review times.
 
+## What the live runs showed
+
+Three real runs of `npm run generate -- "HubSpot"` (Sonnet 5.5, after the Composio key and a valid Anthropic key were set). HubSpot was chosen so Notion and LinkedIn stay untouched for the live checks. Costs are priced from published rates, not read from billing.
+
+| Run | Result | Cost | Time | What happened |
+|---|---|---|---|---|
+| 1 | Complete | $0.349 | 48 s | 102k tokens in, 11.5k out; 6 calls, 3 searches, 7 pages. 47 sourced and 2 uncertain claims. No repair needed. |
+| 2 | Incomplete | $0.359 | 54 s | After a prompt change. The reply came back unusable, repair could not recover it, and the raw reply was not captured, so the cause is unknown. |
+| 3 | Incomplete | $0.508 | 52 s | The model used an invalid step stage. Spending had passed the cap (then $0.50, now $0.60), so no repair was allowed. |
+
+**What we found**
+- **The model overclaimed that a review was required.** In run 1 it marked HubSpot's Marketplace listing review as *required*, which made the verdict "hard" with a 14-62 day total, while its own open questions said the sources did not say a listing is needed to use the app. The review times themselves (10 business days, then no more than 60 days from feedback) were sourced. Fix: the assemble prompt now says a path is `required` only if a claim says the app cannot be used by real users without it, and never "out of caution", and that "hard" or "gated" needs a required path. In run 3 the model then rated it "moderate" with the review as optional. That is one observation, not a proof.
+- **The model drifts on enum words** (a step stage of "listing" instead of "approval"). Fix: obvious cases are now normalized in code before validation rather than spending a repair call; unclear values still go to repair.
+- **The original $0.50 cap was too tight, so it is now $0.60.** Runs cost $0.35, $0.36 and $0.51. Discovery alone varied from $0.11 to $0.19, and parallel page reads can overshoot the cap slightly (run 3 ended 1.5% over, which can still happen at $0.60). Fixes so far: at most 6 pages read, two repair tries, and repairs no longer blocked by the 80% soft limit. Raising the cap to around $0.75 is the other option and is a decision for the owner.
+- **A failed run used to hide its cause.** Failures now keep a snippet of the model's raw reply, and the repair call is given the model's own unparseable text instead of `{}`.
+- **Composio's managed-auth lookup works live.** For HubSpot it returned the OAUTH2 scheme, so the guide says a managed app exists and you may not need your own. This confirmed the response field the code reads.
+- **Claim status held up.** 47 of 49 claims were `sourced` because their quotes were found verbatim on official pages; the two `uncertain` ones were the Composio steps and the effort estimate, as designed.
+
+**Still not verified:** whether the generated HubSpot guide is correct against HubSpot's real console (nobody registered an app), how often live runs complete after the fixes, and Notion and LinkedIn, which are the intended manual checks.
+
 ## Limitations
 
-- No real live run has been made yet (see the build status), so the $0.35-0.45 cost estimate and the $0.50 cap are untested guesses. Live guides are not saved or shareable yet.
+- Only three real runs have been made, all on HubSpot, with costs of $0.35 to $0.51, so the $0.60 cap is tuned to very little data. Live guides are not saved or shareable yet.
 - The public endpoint is protected only by an in-memory per-IP limit and the cost cap; it needs real rate limiting before being exposed.
 - "Official source" is decided by a domain heuristic (the page's domain must start with the provider's name, or be the URL the user typed), so a lookalike domain could be mistaken for official.
 - The recorded research cost of the Gmail and Slack guides covers only the page fetches (priced from published rates, not billing). The web searches that found the pages and the hand assembly are not metered; GitHub's cost was not recorded.
-- Live generation is capped at about $0.50 per guide and one repair try, so an unfamiliar or sprawling provider may come back incomplete.
+- Live generation is capped at about $0.60 per guide and two repair tries, so an unfamiliar or sprawling provider may come back incomplete.
 - Review durations are rarely published by providers. Where a figure comes only from forum posts or third-party blogs, the guide labels it as anecdotal.
 - No provider approvals were attempted, and no paid accounts were used.
 - Provider consoles change. Each guide records the date it was last checked.

@@ -6,11 +6,12 @@ import { DEFAULT_BUDGET } from "../lib/pipeline/config";
 const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-9, `${a} !== ${b}`);
 
 // Defaults.
-assert.equal(DEFAULT_BUDGET.maxCostUsd, 0.5);
-assert.equal(DEFAULT_BUDGET.maxRepairTries, 1);
+assert.equal(DEFAULT_BUDGET.maxCostUsd, 0.6);
+assert.equal(DEFAULT_BUDGET.maxRepairTries, 2);
 const d1 = new UsageTracker(DEFAULT_BUDGET, () => 0);
 assert.equal(d1.mayRepair(0), true);
-assert.equal(d1.mayRepair(1), false); // one repair try only
+assert.equal(d1.mayRepair(1), true);
+assert.equal(d1.mayRepair(2), false); // two repair tries only
 
 // Cost: 100k in + 10k out = $0.20 + $0.10; searches at $0.01 each; cache reads at $0.20/M.
 near(costOf({ inputTokens: 100_000, outputTokens: 10_000, cacheReadTokens: 0, cacheWriteTokens: 0, searches: 0 }), 0.3);
@@ -39,8 +40,8 @@ assert.equal(u.softLimitReached(), false);
 assert.equal(u.mayRepair(0), true);
 u.record("assemble", { input_tokens: 150_000, output_tokens: 10_000 } as never); // $0.40 = 80%
 assert.equal(u.softLimitReached(), true);
-assert.equal(u.mayRepair(0), true); // the first try is always allowed
-assert.equal(u.mayRepair(1), false); // retries are not
+assert.equal(u.mayRepair(0), true);
+assert.equal(u.mayRepair(1), true); // the soft limit stops extra pages, not repairs
 u.record("repair", { input_tokens: 50_000, output_tokens: 0 } as never); // +$0.10 = $0.50 = cap
 assert.equal(u.exceeded(), "cost");
 assert.equal(u.mayRepair(0), false);

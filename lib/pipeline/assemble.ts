@@ -18,7 +18,7 @@ import { callModel, type ModelClient } from "./anthropic";
 import type { Budget } from "./config";
 import type { UsageTracker } from "./budget";
 import { deriveNeedsProviderApproval, deriveTotalTime, formatDays } from "./derive";
-import { parseWith } from "./json";
+import { extractJson, type Parsed } from "./json";
 import { ASSEMBLE_SYSTEM, assembleUser, repairUser } from "./prompts/assemble";
 import { slugify } from "./resolve";
 
@@ -49,6 +49,65 @@ export const AssembledSchema = z.object({
   openQuestions: z.array(z.string()),
 });
 export type Assembled = z.infer<typeof AssembledSchema>;
+
+const STAGE_WORDS: Array<[Assembled["steps"][number]["stage"], RegExp]> = [
+  ["registration", /regist|setup|set up|creat|console|credential|app$/],
+  ["scoping", /scope|permission|access/],
+  ["approval", /review|listing|publish|certif|verif|submit|market|launch|approv|wait/],
+  ["execution", /auth|token|test|integrat|composio|connect|session|oauth|flow|run/],
+];
+const WHO_WORDS: Array<["agent" | "you" | "wait", RegExp]> = [
+  ["wait", /wait|elapsed|pending/],
+  ["agent", /agent|ai|auto|assistant|bot|composio/],
+  ["you", /you|developer|human|user|manual|owner|admin/],
+];
+
+/**
+ * Models sometimes drift on enum words (a step stage of "listing", a "who" of "developer").
+ * Fix the obvious cases in code rather than spend a repair call; anything unclear is left for validation.
+ */
+export function normalizeAssembled(raw: unknown): { value: unknown; notes: string[] } {
+  const notes: string[] = [];
+  if (!raw || typeof raw !== "object" || !Array.isArray((raw as { steps?: unknown }).steps)) return { value: raw, notes };
+  const stages = new Set(["registration", "scoping", "approval", "execution"]);
+  const whos = new Set(["agent", "you", "wait"]);
+  const steps = (raw as { steps: Array<Record<string, unknown>> }).steps.map((s) => {
+    if (!s || typeof s !== "object") return s;
+    const out = { ...s };
+    if (typeof out.stage === "string" && !stages.has(out.stage)) {
+      const w = out.stage.toLowerCase();
+      const hit = STAGE_WORDS.find(([, re]) => re.test(w));
+      if (hit) {
+        notes.push(`step stage "${out.stage}" -> ${hit[0]}`);
+        out.stage = hit[0];
+      }
+    }
+    if (typeof out.who === "string" && !whos.has(out.who)) {
+      const w = out.who.toLowerCase();
+      const hit = WHO_WORDS.find(([, re]) => re.test(w));
+      if (hit) {
+        notes.push(`step who "${out.who}" -> ${hit[0]}`);
+        out.who = hit[0];
+      }
+    }
+    return out;
+  });
+  return { value: { ...(raw as object), steps }, notes };
+}
+
+/** Parse the model's reply: extract JSON, fix enum drift, then validate the shape. */
+export function parseAssembled(text: string): Parsed<Assembled> & { notes: string[] } {
+  let raw: unknown;
+  try {
+    raw = extractJson(text);
+  } catch (e) {
+    return { ok: false, errors: [e instanceof Error ? e.message : String(e)], notes: [] };
+  }
+  const { value, notes } = normalizeAssembled(raw);
+  const result = AssembledSchema.safeParse(value);
+  if (result.success) return { ok: true, value: result.data, notes };
+  return { ok: false, errors: result.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`), notes };
+}
 
 export type MergeContext = {
   provider: { name: string; website: string; developerPortalUrl?: string };
@@ -147,7 +206,7 @@ export async function assemble(
     composioClaimId: string;
     notes?: string;
   },
-): Promise<{ ok: true; value: Assembled; raw: unknown } | { ok: false; errors: string[]; raw?: unknown }> {
+): Promise<{ ok: true; value: Assembled; raw: unknown } | { ok: false; errors: string[]; rawText: string }> {
   const call = await callModel({
     client: opts.client,
     tracker: opts.tracker,
@@ -160,13 +219,13 @@ export async function assemble(
       messages: [{ role: "user", content: assembleUser(opts) }],
     },
   });
-  const parsed = parseWith(AssembledSchema, call.text);
-  return parsed.ok ? { ok: true, value: parsed.value, raw: parsed.value } : { ok: false, errors: parsed.errors };
+  const parsed = parseAssembled(call.text);
+  return parsed.ok ? { ok: true, value: parsed.value, raw: parsed.value } : { ok: false, errors: parsed.errors, rawText: call.text };
 }
 
 export async function repair(
   opts: CommonOpts & { previous: unknown; errors: string[]; claimIds: string[]; composioClaimId: string },
-): Promise<{ ok: true; value: Assembled } | { ok: false; errors: string[] }> {
+): Promise<{ ok: true; value: Assembled } | { ok: false; errors: string[]; rawText: string }> {
   const call = await callModel({
     client: opts.client,
     tracker: opts.tracker,
@@ -179,6 +238,6 @@ export async function repair(
       messages: [{ role: "user", content: repairUser(opts) }],
     },
   });
-  const parsed = parseWith(AssembledSchema, call.text);
-  return parsed.ok ? { ok: true, value: parsed.value } : { ok: false, errors: parsed.errors };
+  const parsed = parseAssembled(call.text);
+  return parsed.ok ? { ok: true, value: parsed.value } : { ok: false, errors: parsed.errors, rawText: call.text };
 }

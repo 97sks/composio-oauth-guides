@@ -42,7 +42,7 @@ export async function discover(opts: {
       system: DISCOVER_SYSTEM,
       output_config: { effort: "low" },
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: maxSearches }],
-      messages: [{ role: "user", content: discoverUser(resolved, Math.min(10, budget.maxFetches)) }],
+      messages: [{ role: "user", content: discoverUser(resolved, Math.min(budget.maxPages + 2, budget.maxFetches)) }],
     },
   });
   const parsed = parseWith(DiscoverSchema, call.text);
