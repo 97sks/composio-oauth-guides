@@ -19,6 +19,12 @@
   aside a.on{background:#1b1b1e;color:#fff}
   main{flex:1;padding:28px 36px;max-width:1280px}
   h1{font-size:26px;margin:0 0 4px}
+  .top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+  .top h1{margin:0}
+  .quota{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:5px 12px;font-size:12px;color:var(--mute)}
+  .quota b{color:#fff;font-variant-numeric:tabular-nums}
+  .quota.low b{color:var(--amber)}
+  .quota i{width:7px;height:7px;border-radius:50%;background:var(--green)} .quota.low i{background:var(--amber)} .quota.off i{background:var(--mute)}
   h1 small{font:13px ui-monospace,monospace;color:var(--mute);margin-left:8px;font-weight:400}
   .proto{border:1px dashed var(--amber);color:var(--amber);padding:8px 12px;border-radius:6px;margin:14px 0 20px;font-size:13px}
 
@@ -129,13 +135,13 @@
 </aside>
 
 <main>
-  <h1>Toolkits <small>1,715</small></h1>
+  <div class="top"><h1>Toolkits <small>1,715</small></h1>
+    <div class="quota" id="quota" title="Live guide generations left for you this hour. Library and saved guides are free."><i></i><span id="quotaText">Checking…</span></div></div>
   <div class="proto"><b>Prototype.</b> Layout copied from the dashboard Toolkits page. <b>GitHub, Gmail (Google) and Slack</b> are the library guides: each was researched from the provider's own pages, follows the output schema (<code>lib/guide-schema.ts</code>), and links every statement to a cited source. <b>Notion and LinkedIn are not in the library</b>: use <b>Generate guide</b> on their cards or the box below. Generation calls the live pipeline (<code>POST /api/generate</code>) and streams its progress and running cost. Every generate action ends in the cost and token panel, then the guide. If the server cannot run it (no API key, rate limit, or the page opened as a plain file), the reason is shown and nothing is spent.</div>
 
   <section class="gen">
     <b>Can't find your app?</b>
     <p>Enter an app name or website. An agent researches the provider and drafts a setup guide you can share.</p>
-    <div class="muted" id="genCount" style="font-size:12px;margin-top:6px">Checking available generations…</div>
     <form id="genForm">
       <input type="text" id="genInput" placeholder="e.g. Linear, calendly.com, HubSpot" autocomplete="off">
       <button class="primary">Generate guide</button>
@@ -531,14 +537,15 @@ function simulate(q, lower, reason){
   });
 }
 async function refreshCount(){
-  const el=$("#genCount"); if(!el) return;
+  const q=$("#quota"), t=$("#quotaText"); if(!q) return;
   const saved=Object.keys(loadSaved()).length;
-  const tail=saved?` · ${saved} generated guide${saved>1?"s":""} saved in this browser`:"";
+  const tail=saved?` · ${saved} saved`:"";
   try{
     const r=await (await fetch("/api/generate",{cache:"no-store"})).json();
-    el.textContent=!r.enabled?"Live generation is not available on this server"+tail
-      :`Generations left this hour: ${r.remaining} of ${r.limit}`+tail+(r.remaining===0?" · limit reached, library and saved guides still open":"");
-  }catch(e){ el.textContent="Generation count unavailable"+tail; }
+    q.classList.toggle("off",!r.enabled); q.classList.toggle("low",r.enabled&&r.remaining<=1);
+    t.innerHTML=!r.enabled?"Live generation unavailable"+tail
+      :`Generations left <b>${r.remaining}/${r.limit}</b> this hour`+tail;
+  }catch(e){ q.classList.add("off"); t.textContent="Generation count unavailable"+tail; }
 }
 $("#genForm").addEventListener("submit",e=>{ e.preventDefault(); runGenerate($("#genInput").value); });
 
