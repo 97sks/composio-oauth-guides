@@ -40,7 +40,7 @@
   .runlog div{padding:2px 0}
   .runlog .ok{color:var(--green)}
 
-  .layout{display:grid;grid-template-columns:1fr 280px;gap:22px;align-items:start}
+  .layout{display:grid;grid-template-columns:1fr;gap:22px;align-items:start}
   table{width:100%;border-collapse:collapse;border:1px solid var(--line);background:var(--panel)}
   th{font:11px ui-monospace,monospace;letter-spacing:.08em;color:var(--mute);text-align:left;padding:14px 16px;border-bottom:1px solid var(--line);font-weight:400}
   td{padding:14px 16px;border-bottom:1px solid var(--line);vertical-align:middle}
@@ -60,9 +60,6 @@
   .dots.l3 i:nth-child(-n+3){background:#fb923c}
   .dots.l4 i:nth-child(-n+4){background:var(--red)}
   .muted{color:var(--mute)}
-  .side{background:var(--panel);border:1px solid var(--line);padding:14px;font-size:13px}
-  .side h4{margin:0 0 10px;font-size:13px}
-  .side label{display:flex;justify-content:space-between;padding:7px 0;color:#c9c9ce;cursor:pointer}
 
   /* drawer */
   .scrim{position:fixed;inset:0;background:#0009;display:none}
@@ -136,7 +133,7 @@
 
 <main>
   <div class="top"><h1>Toolkits <small>1,715</small></h1>
-    <div class="quota" id="quota" title="Live guide generations left for you this hour. Library and saved guides are free."><i></i><span id="quotaText">Checking…</span></div></div>
+    <div class="quota" id="quota" title="Live guide generations left for you in the last 24 hours. Library and saved guides are free."><i></i><span id="quotaText">Checking…</span></div></div>
   <div class="proto"><b>Prototype.</b> Layout copied from the dashboard Toolkits page. <b>GitHub, Gmail (Google) and Slack</b> are the library guides: each was researched from the provider's own pages, follows the output schema (<code>lib/guide-schema.ts</code>), and links every statement to a cited source. <b>Notion and LinkedIn are not in the library</b>: use <b>Generate guide</b> on their cards or the box below. Generation calls the live pipeline (<code>POST /api/generate</code>) and streams its progress and running cost. Every generate action ends in the cost and token panel, then the guide. If the server cannot run it (no API key, rate limit, or the page opened as a plain file), the reason is shown and nothing is spent.</div>
 
   <section class="gen">
@@ -153,13 +150,6 @@
       <thead><tr><th>APP</th><th>TOOLKIT SLUGS</th><th>AUTH</th><th>OWN OAUTH APP SETUP</th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
-    <div class="side">
-      <h4>Filter &amp; Sort</h4>
-      <label>Has setup guide <input type="checkbox" id="fGuide"></label>
-      <label>Needs provider review <input type="checkbox" id="fReview"></label>
-      <label>Setup under 1 day <input type="checkbox" id="fFast"></label>
-      <p class="muted" style="font-size:12px;margin:10px 0 0">Filters are new. They use the guide data, not the toolkit API.</p>
-    </div>
   </div>
 </main>
 
@@ -236,14 +226,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 function renderRows(){
-  const fG=$("#fGuide").checked, fR=$("#fReview").checked, fF=$("#fFast").checked;
-  const shown = ROWS.filter(r=>{
-    const g=GUIDES[r.g];
-    if(fG && !g) return false;
-    if(fR && !(g&&g.review)) return false;
-    if(fF && !(g&&g.level<=2)) return false;
-    return true;
-  });
+  const shown = ROWS;
   const row = r=>{
     const g=GUIDES[r.g];
     const pills=r.auth.map(a=>`<span class="pill ${a==="API Key"?"key":""}">${esc(a)}</span>`).join("");
@@ -260,7 +243,6 @@ function renderRows(){
     (withGuide.length ? head("GUIDE AVAILABLE ("+withGuide.length+")")+withGuide.map(row).join("") : "") +
     (without.length ? head("NO GUIDE YET: GENERATE ON DEMAND ("+without.length+")")+without.map(row).join("") : "");
 }
-["#fGuide","#fReview","#fFast"].forEach(s=>$(s).addEventListener("change",renderRows));
 $("#rows").addEventListener("click",e=>{
   const gen=e.target.closest("[data-gen]"); if(gen){ e.stopPropagation(); $("#genInput").value=gen.dataset.gen; runGenerate(gen.dataset.gen); return; }
   const tr=e.target.closest("tr[data-g]"); if(tr) openGuide(tr.dataset.g);
@@ -544,7 +526,7 @@ async function refreshCount(){
     const r=await (await fetch("/api/generate",{cache:"no-store"})).json();
     q.classList.toggle("off",!r.enabled); q.classList.toggle("low",r.enabled&&r.remaining<=1);
     t.innerHTML=!r.enabled?"Live generation unavailable"+tail
-      :`Generations left <b>${r.remaining}/${r.limit}</b> this hour`+tail;
+      :`Generations left <b>${r.remaining}/${r.limit}</b> per 24 hrs`+tail;
   }catch(e){ q.classList.add("off"); t.textContent="Generation count unavailable"+tail; }
 }
 $("#genForm").addEventListener("submit",e=>{ e.preventDefault(); runGenerate($("#genInput").value); });

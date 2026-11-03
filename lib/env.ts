@@ -15,7 +15,7 @@ const Schema = z.object({
     .enum(["true", "false"])
     .default("true")
     .transform((v) => v === "true"),
-  GENERATE_RATE_LIMIT_PER_HOUR: z.coerce.number().int().min(1).max(1000).default(3),
+  GENERATE_RATE_LIMIT_PER_DAY: z.coerce.number().int().min(1).max(1000).default(3),
 });
 
 export type Env = z.infer<typeof Schema>;

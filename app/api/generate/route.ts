@@ -14,7 +14,7 @@ const Body = z.object({ query: z.string().trim().min(2).max(200) });
 const hits = new Map<string, number[]>();
 function overLimit(ip: string, perHour: number): boolean {
   const now = Date.now();
-  const recent = (hits.get(ip) ?? []).filter((t) => now - t < 3_600_000);
+  const recent = (hits.get(ip) ?? []).filter((t) => now - t < 86_400_000);
   if (recent.length >= perHour) {
     hits.set(ip, recent);
     return true;
@@ -27,7 +27,7 @@ function clientIp(request: Request): string {
   return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
 }
 
-/** GET -> how many live generations this caller has left this hour (approximate: the counter is per server instance). */
+/** GET -> how many live generations this caller has left in the last 24 hours (approximate: the counter is per server instance). */
 export async function GET(request: Request) {
   let env;
   try {
@@ -36,12 +36,12 @@ export async function GET(request: Request) {
     return Response.json({ enabled: false, limit: 0, remaining: 0 });
   }
   const now = Date.now();
-  const used = (hits.get(clientIp(request)) ?? []).filter((t) => now - t < 3_600_000).length;
+  const used = (hits.get(clientIp(request)) ?? []).filter((t) => now - t < 86_400_000).length;
   return Response.json(
     {
       enabled: env.GENERATE_ENABLED && Boolean(env.ANTHROPIC_API_KEY),
-      limit: env.GENERATE_RATE_LIMIT_PER_HOUR,
-      remaining: Math.max(0, env.GENERATE_RATE_LIMIT_PER_HOUR - used),
+      limit: env.GENERATE_RATE_LIMIT_PER_DAY,
+      remaining: Math.max(0, env.GENERATE_RATE_LIMIT_PER_DAY - used),
     },
     { headers: { "cache-control": "no-store" } },
   );
@@ -70,8 +70,8 @@ export async function POST(request: Request) {
   }
   if (!isLibrary) {
     const ip = clientIp(request);
-    if (overLimit(ip, env.GENERATE_RATE_LIMIT_PER_HOUR)) {
-      return Response.json({ error: `Rate limit reached: ${env.GENERATE_RATE_LIMIT_PER_HOUR} generations per hour.` }, { status: 429 });
+    if (overLimit(ip, env.GENERATE_RATE_LIMIT_PER_DAY)) {
+      return Response.json({ error: `Rate limit reached: ${env.GENERATE_RATE_LIMIT_PER_DAY} generations per 24 hours.` }, { status: 429 });
     }
   }
 

@@ -26,7 +26,7 @@ npm run dev                  # http://localhost:3000 opens the UI
 | `GUIDE_MAX_COST_USD` | Hard cost cap per guide | `0.60` |
 | `GUIDE_MAX_REPAIR_TRIES` | Repair tries after a failed validation | `2` |
 | `GENERATE_ENABLED` | Turn the public endpoint off | `true` |
-| `GENERATE_RATE_LIMIT_PER_HOUR` | Per-IP limit on non-library generations | `3` |
+| `GENERATE_RATE_LIMIT_PER_DAY` | Per-IP limit on non-library generations in any rolling 24 hours | `3` |
 
 Never commit a real key. `.env.local` is git-ignored.
 
