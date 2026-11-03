@@ -179,7 +179,7 @@ function fromSchema(s){
     scopes:s.scopes.map(x=>x.name), scopeStr:s.composio.authConfigScopes,
     steps:s.steps.map(x=>({w:x.who,t:x.title,d:x.detail,note:x.agentNote,url:x.url,cites:x.claimIds,stage:x.stage})),
     blockers:s.blockers.map(b=>({title:b.title,detail:b.detail,fix:b.fix,cites:b.claimIds})),
-    approval:s.approval, run:s.run||null, runKind:s.run?(s.run.source==="pipeline"?"live":"recorded"):"unrecorded", live:!!(s.run&&s.run.source==="pipeline"), claims:s.claims, sourceList:s.sources, openQuestions:s.openQuestions, lastChecked:s.lastChecked,
+    approval:s.approval, run:s.run||null, runKind:s.run?(s.run.source==="pipeline"?"live":"recorded"):"unrecorded", live:!!(s.run&&s.run.source==="pipeline"), claims:s.claims, managedAuth:s.managedAuth, managedAuthNote:s.managedAuthNote, sourceList:s.sources, openQuestions:s.openQuestions, lastChecked:s.lastChecked,
     sources:s.sources.map(x=>[x.title,x.url]),
     tested:s.tested.map(t=>[t.result==="passed"?"READ":"NOT TESTED", t.what+": "+t.note])
   };
@@ -206,13 +206,14 @@ const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&g
 
 function renderRows(){
   const fG=$("#fGuide").checked, fR=$("#fReview").checked, fF=$("#fFast").checked;
-  $("#rows").innerHTML = ROWS.filter(r=>{
+  const shown = ROWS.filter(r=>{
     const g=GUIDES[r.g];
     if(fG && !g) return false;
     if(fR && !(g&&g.review)) return false;
     if(fF && !(g&&g.level<=2)) return false;
     return true;
-  }).map(r=>{
+  });
+  const row = r=>{
     const g=GUIDES[r.g];
     const pills=r.auth.map(a=>`<span class="pill ${a==="API Key"?"key":""}">${esc(a)}</span>`).join("");
     const setup = !r.auth.some(a=>/OAuth/.test(a)) ? `<span class="muted">n/a</span>`
@@ -221,7 +222,12 @@ function renderRows(){
     return `<tr class="row ${g?"has":""}" ${g?`data-g="${r.g}"`:""}>
       <td><div class="app"><span class="logo" style="background:${r.c}">${esc(r.n[0])}</span>${esc(r.n)}</div></td>
       <td class="slug">${esc(r.slug)}</td><td>${pills}</td><td>${setup}</td></tr>`;
-  }).join("");
+  };
+  const head = t=>`<tr class="sect"><td colspan="4" class="muted" style="font-size:11px;letter-spacing:.06em;padding-top:14px">${t}</td></tr>`;
+  const withGuide = shown.filter(r=>GUIDES[r.g]), without = shown.filter(r=>!GUIDES[r.g]);
+  $("#rows").innerHTML =
+    (withGuide.length ? head("GUIDE AVAILABLE ("+withGuide.length+")")+withGuide.map(row).join("") : "") +
+    (without.length ? head("NO GUIDE YET: GENERATE ON DEMAND ("+without.length+")")+without.map(row).join("") : "");
 }
 ["#fGuide","#fReview","#fFast"].forEach(s=>$(s).addEventListener("change",renderRows));
 $("#rows").addEventListener("click",e=>{
@@ -312,7 +318,7 @@ function openGuide(key, opts={}){
       <div class="stat"><span>PROVIDER WAIT</span><b>${esc(g.wait)}</b></div>
     </div>
     <div class="row2"><span class="muted" style="font-size:13px">Confidence: <b class="${confColor}">${esc(g.conf)}</b>. ${esc(g.confNote)}</span>
-      <button id="share">Copy share link</button></div>
+      <button id="share">Copy markdown for agent</button></div>
 
     <h3>Cost and token usage</h3>
     ${runPanel(g)}
@@ -340,11 +346,55 @@ function openGuide(key, opts={}){
   document.body.classList.add("open");
   $("#close").onclick = closeGuide;
   $("#share").onclick = ()=>{
-    if(g.generated||g.live){ toast("Live guides are not saved yet"); return; }
-    const url = location.origin+location.pathname+"#guide="+(g.generated?"":g.slug);
-    (navigator.clipboard?navigator.clipboard.writeText(url):Promise.resolve()).finally(()=>toast("Link copied"));
+    const md = toMarkdown(g);
+    (navigator.clipboard?navigator.clipboard.writeText(md):Promise.reject()).then(()=>toast("Markdown copied"),()=>toast("Copy blocked by the browser"));
   };
   if(!g.generated && !opts.noHash) history.replaceState(null,"","#guide="+g.slug);
+}
+function toMarkdown(g){
+  const cite = ids => ids&&ids.length ? " ["+ids.join(", ")+"]" : "";
+  const who = {agent:"AGENT",you:"YOU",wait:"WAIT"};
+  const out = [];
+  out.push(`# ${g.name} OAuth app setup`, "");
+  if(g.incomplete) out.push(`> INCOMPLETE RUN: ${g.incomplete.reason}. No guide was assembled.`, "");
+  else if(g.generated) out.push("> Placeholder only. Nothing here was researched.", "");
+  else if(g.live) out.push("> Generated live by an agent. Not tried hands-on; check claims marked uncertain or anecdotal.", "");
+  out.push(g.summary||"", "", "## Verdict",
+    `- Difficulty: ${g.label}`, `- Your effort: ${g.schema?g.effortLabel:g.time}`);
+  if(g.schema) out.push(`- Total time: ${g.total}`);
+  out.push(`- Provider wait: ${g.wait}`, `- Confidence: ${g.conf}. ${g.confNote||""}`);
+  if(g.lastChecked) out.push(`- Last checked: ${g.lastChecked}`);
+  if(g.managedAuth) out.push("", "## Composio managed auth",
+    `- ${{available:"Available: you may not need your own OAuth app.",not_available:"Not available: you need your own OAuth app.",unknown:"Unknown: not yet checked against Composio."}[g.managedAuth]||g.managedAuth}`,
+    ...(g.managedAuthNote?[`- ${g.managedAuthNote}`]:[]));
+  out.push("", "## Steps (who does what)");
+  (g.steps||[]).forEach((x,i)=>{
+    out.push(`${i+1}. [${who[x.w]||x.w}] ${x.t}: ${x.d}${cite(x.cites)}`);
+    if(x.note) out.push(`   - ${x.w==="agent"?"Agent":"Why you"}: ${x.note}`);
+    if(x.url) out.push(`   - ${x.url}`);
+  });
+  out.push("", "## What could block you");
+  (g.blockers||[]).forEach(b=>out.push(typeof b==="string" ? `- ${b}` : `- **${b.title}** ${b.detail} Fix: ${b.fix}${cite(b.cites)}`));
+  if(g.approval&&g.approval.length){
+    out.push("", "## Approval paths");
+    g.approval.forEach(a=>{
+      out.push(`- **${a.name}** (${a.required?"required":"only in some cases"}): ${a.appliesWhen} Wait: ${a.wait.label} (${a.wait.basis}).${cite(a.claimIds)}`);
+      a.interimLimits.forEach(l=>out.push(`  - Limit: ${l}`));
+    });
+  }
+  out.push("", "## Composio side", "```", snippet(g), "```");
+  if(g.schema&&g.claims){
+    out.push("", "## Claims");
+    g.claims.forEach(c=>out.push(`- ${c.id} (${c.status}): ${c.text}`));
+  }
+  if(g.openQuestions&&g.openQuestions.length){
+    out.push("", "## Not determined");
+    g.openQuestions.forEach(q=>out.push(`- ${q}`));
+  }
+  out.push("", "## Sources");
+  const src = g.schema ? (g.sourceList||[]).map(x=>[x.title,x.url]) : (g.sources||[]);
+  src.forEach(x=>out.push(`- [${x[0]}](${x[1]})`));
+  return out.join("\n")+"\n";
 }
 function closeGuide(){document.body.classList.remove("open");history.replaceState(null,"",location.pathname);}
 $("#scrim").onclick = closeGuide;
