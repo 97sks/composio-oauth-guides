@@ -23,6 +23,30 @@ function overLimit(ip: string, perHour: number): boolean {
   return false;
 }
 
+function clientIp(request: Request): string {
+  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
+}
+
+/** GET -> how many live generations this caller has left this hour (approximate: the counter is per server instance). */
+export async function GET(request: Request) {
+  let env;
+  try {
+    env = readEnv();
+  } catch {
+    return Response.json({ enabled: false, limit: 0, remaining: 0 });
+  }
+  const now = Date.now();
+  const used = (hits.get(clientIp(request)) ?? []).filter((t) => now - t < 3_600_000).length;
+  return Response.json(
+    {
+      enabled: env.GENERATE_ENABLED && Boolean(env.ANTHROPIC_API_KEY),
+      limit: env.GENERATE_RATE_LIMIT_PER_HOUR,
+      remaining: Math.max(0, env.GENERATE_RATE_LIMIT_PER_HOUR - used),
+    },
+    { headers: { "cache-control": "no-store" } },
+  );
+}
+
 /**
  * POST { query } -> newline-delimited JSON events: stage progress, running usage, and a final
  * "done" event carrying the result. Library guides cost nothing and are not rate limited.
@@ -45,7 +69,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "ANTHROPIC_API_KEY is not set on the server. Add it to .env.local (see .env.example)." }, { status: 503 });
   }
   if (!isLibrary) {
-    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
+    const ip = clientIp(request);
     if (overLimit(ip, env.GENERATE_RATE_LIMIT_PER_HOUR)) {
       return Response.json({ error: `Rate limit reached: ${env.GENERATE_RATE_LIMIT_PER_HOUR} generations per hour.` }, { status: 429 });
     }
