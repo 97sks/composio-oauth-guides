@@ -4,9 +4,11 @@ Take-home for the APM Integrations assignment ([ASSIGNMENT.md](ASSIGNMENT.md)).
 
 A developer looks up an app and gets a shareable guide: how hard it is to get an OAuth app ready, how long it takes (effort and approval waits shown separately), what could block them, and which steps an agent can do versus which they must do themselves. For an app not in the library, an agent researches the provider and generates a guide on demand.
 
-## Walkthrough
+## Links
 
-Animated four-step walkthrough of the UI for evaluators: [OAuth Guides Walkthrough](https://claude.ai/artifact/22vEauAc4DmGaqeJSbnXRn).
+- **Live app:** https://composio-oauth-guides.vercel.app
+- **Source repository:** https://github.com/97sks/composio-oauth-guides
+- **Tutorial / walkthrough:** [OAuth Guides Tutorial](https://claude.ai/artifact/22vEauAc4DmGaqeJSbnXRn), an animated four-step walkthrough of the UI.
 
 ## Setup
 
